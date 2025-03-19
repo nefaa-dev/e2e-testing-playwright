@@ -1,0 +1,161 @@
+name: Deploy Integration Environment to AWS int (biontech)
+
+on:
+  workflow_dispatch:
+    inputs:
+      target_chart_version:
+        description: Helm chart Target version
+        required: true
+        type: string
+        default: "1.1.0"
+
+
+jobs:
+  setup-vars:
+    name: Set up Deployment variables
+    runs-on: ubuntu-latest
+    steps:
+      - name : Set up Deployment variables 
+        id: vars
+        run: |
+          RELEASE_NAME=${{ github.ref_name }}
+          SHA=${{ github.sha }}
+          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_OUTPUT
+          echo "SHA=$SHA" >> $GITHUB_OUTPUT
+          target_chart_version=${{ inputs.target_chart_version }}
+          if [[ -z "$target_chart_version" ]]; then
+            target_chart_version="1.1.0"
+          fi
+          echo "target_chart_version=$target_chart_version" >> $GITHUB_OUTPUT
+    outputs:
+      RELEASE_NAME: ${{ steps.vars.outputs.RELEASE_NAME }}
+      SHA: ${{ steps.vars.outputs.SHA }}
+      target_chart_version: ${{ steps.vars.outputs.target_chart_version }}
+
+  config:
+    name: Setup Aws and Github configurations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: biontech-qm/swae-github-runners/setup-env-vars@v0.3.0
+        with:
+          environment: int
+    outputs:
+      GH_REPO: ${{ env.GH_REPO }}
+      AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ env.AWS_REGION }}
+
+  build-api-image:
+    name: Build and push the Vendors API Image
+    needs: [config]
+    permissions:
+      id-token: write
+      contents: read
+    uses: biontech-qm/bnt-reusable-workflows/.github/workflows/docker-cd.yaml@3242079c8f08e408818e47acb654bffcb5b3249c
+    with:
+      image_name: vendors-api
+      dockerfile: components/api/Dockerfile
+      context: components/api
+      image_tags: "${{ github.sha }}"
+      ecr_oidc_role: "arn:aws:iam::${{ needs.config.outputs.AWS_ACCOUNT_ID }}:role/gh-oidc-id-bioai-autolab-vendors-api-deployment_role"
+      trivy_scan: false
+    secrets:
+      build-secret: |
+        "ID_GITHUB_USER=${{ vars.ID_AUTOMATEDLAB_USER }}"
+        "ID_GITHUB_TOKEN=${{ secrets.ID_AUTOMATEDLAB_TOKEN }}"
+
+  build-web-image:
+    name: Build and push the Vendors Web Image
+    needs: config
+    permissions:
+      id-token: write
+      contents: read
+    uses: biontech-qm/bnt-reusable-workflows/.github/workflows/docker-cd.yaml@3242079c8f08e408818e47acb654bffcb5b3249c
+    with:
+      image_name: vendors-web
+      dockerfile: components/web/Dockerfile
+      context: components/web
+      image_tags: "${{ github.sha }}"
+      ecr_oidc_role: "arn:aws:iam::${{ needs.config.outputs.AWS_ACCOUNT_ID }}:role/gh-oidc-id-bioai-autolab-vendors-api-deployment_role"
+      trivy_scan: false
+      build-args: "VITE_API_URL=https://vendors-api.labs-staging.bion.tech/api/v1/vendors"
+    secrets:
+      build-secret: |
+        "ID_GITHUB_TOKEN=${{ secrets.ID_AUTOMATEDLAB_TOKEN }}"
+
+  build-vendors-chart:
+    name: Build and push the vendors Helm chart
+    needs: [ config, setup-vars ]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Update versions
+        shell: bash
+        run: |
+          version="${{ needs.setup-vars.outputs.target_chart_version }}-${{ needs.setup-vars.outputs.SHA }}"
+          TARGET_CHART_VERSION=${{ needs.setup-vars.outputs.target_chart_version }}
+          RELEASE_NAME=${{ needs.setup-vars.outputs.RELEASE_NAME }}
+          REGISTRY_HOST="${{ needs.config.outputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ needs.config.outputs.AWS_REGION }}.amazonaws.com"
+          REGISTRY_PROJECT="vendors"
+          BUILD_PATH=charts/vendors
+          yq e -i ".dependencies[] |= (select(.name == \"api\").version = \"${TARGET_CHART_VERSION}-${RELEASE_NAME}\")" $BUILD_PATH/Chart.yaml
+          yq e -i ".dependencies[] |= (select(.name == \"api\").repository = \"oci://$REGISTRY_HOST/$REGISTRY_PROJECT/helm\")" $BUILD_PATH/Chart.yaml
+          yq e -i ".dependencies[] |= (select(.name == \"web\").version = \"${TARGET_CHART_VERSION}-${RELEASE_NAME}\")" $BUILD_PATH/Chart.yaml
+          yq e -i ".dependencies[] |= (select(.name == \"web\").repository = \"oci://$REGISTRY_HOST/$REGISTRY_PROJECT/helm\")" $BUILD_PATH/Chart.yaml
+
+      - name: Push Vendors Chart to ECR
+        uses: ./.github/workflows/actions/helm
+        with:
+          role_arn: "arn:aws:iam::${{ needs.config.outputs.AWS_ACCOUNT_ID }}:role/gh-oidc-id-bioai-autolab-vendors-api-deployment_role"
+          aws_region: eu-central-1
+          build_path: charts/vendors
+          ecr_registry: "${{ needs.config.outputs.AWS_ACCOUNT_ID }}.dkr.ecr.${{ needs.config.outputs.AWS_REGION }}.amazonaws.com"
+          chart_version: "${{ needs.setup-vars.outputs.target_chart_version }}-${{ needs.setup-vars.outputs.SHA }}"
+
+  deploy-chart:
+    needs: [ setup-vars, config, build-api-image, build-web-image, build-vendors-chart ]
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup AWS credentials
+        uses: aws-actions/configure-aws-credentials@010d0da01d0b5a38af31e9c3470dbfdabdecca3a
+        with:
+          role-to-assume: "arn:aws:iam::${{ needs.config.outputs.AWS_ACCOUNT_ID }}:role/gh-oidc-id-bioai-autolab-vendors-api-deployment_role"
+          aws-region: eu-central-1
+
+      - name: Setup new values files for ${{ github.ref_name }}
+        id: new-values
+        shell: bash
+        run: |
+          RELEASE_NAME=${{ needs.setup-vars.outputs.RELEASE_NAME }}
+          SHA=${{ needs.setup-vars.outputs.SHA }}
+          echo $RELEASE_NAME
+          echo $SHA
+          VALUES_PATH=infra/values-int.yaml
+          echo "VALUES_PATH=$VALUES_PATH" >> $GITHUB_OUTPUT
+
+          yq e -i '.global.featureBranch = false' $VALUES_PATH
+          yq e -i ".api.image.tag = \"$SHA\"" $VALUES_PATH
+          yq e -i ".web.image.tag = \"$SHA\"" $VALUES_PATH
+
+      - name: Debug
+        run: cat ${{ steps.new-values.outputs.VALUES_PATH }}
+
+      - name: Deploy the integration environment
+        uses: ./.github/workflows/actions/deploy-eks-helm
+        with:
+          aws-region: eu-central-1
+          cluster-name: autolab-int
+          config-files: ${{ steps.new-values.outputs.VALUES_PATH }}
+          chart-path: charts/vendors
+          namespace: vendors
+          name: vendors

@@ -1,0 +1,2 @@
+Eurofins,IDTDNA,TwistDNA,ThermoFisher,Biontech,Validity_Eurofins,Validity_IDTDNA,Validity_TwistDNA,Validity_ThermoFisher,Validity_Biontech
+xmark-icon,check-icon,check-icon,xmark-icon,xmark-icon,High GC content at position 269 : 75% Homopolymer region at position 661 : (length 10),Valid,Valid,GC High from position 269 to 311 GC High from position 323 to 368 GC High from position 629 to 677 Homopolymer from position 661 to 670,Max GC content in 41 bp window : 83% Longest homopolymer : (length 10)

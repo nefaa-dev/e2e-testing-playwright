@@ -1,0 +1,50 @@
+name: Vendors Web CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "components/web/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vendors-web-ci:
+    name:  Vendors Web CI 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
+        with:
+          node-version: "20"
+
+      - name: Install pnpm
+        run: |
+          corepack enable
+          npm install -g pnpm@9 --force
+
+      - name: Set Instadeep npm registry
+        run: |
+          npm config set @instadeepai:registry=https://npm.pkg.github.com
+          echo "//npm.pkg.github.com/:_authToken=${{ secrets.ID_AUTOMATEDLAB_TOKEN }}" > components/web/.npmrc
+
+      - name: Install dependencies
+        working-directory: components/web
+        run: pnpm install
+
+      - name: Build
+        working-directory: components/web
+        run: pnpm build
+
+      - name: Lint
+        working-directory: components/web
+        run: pnpm lint
+
+      - name: Test
+        working-directory: components/web
+        run: pnpm test

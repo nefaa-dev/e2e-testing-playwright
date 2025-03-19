@@ -1,0 +1,2 @@
+Eurofins,IDTDNA,TwistDNA,ThermoFisher,Biontech,Validity_Eurofins,Validity_IDTDNA,Validity_TwistDNA,Validity_ThermoFisher,Validity_Biontech
+xmark-icon,check-icon,xmark-icon,xmark-icon,xmark-icon,The sequence is complex. But we are unable to scan the sequence.,Valid,"Problematic area from position 145 to 161, 206 to 219 and 656 to 724",GC Low from position 151 to 193,Min GC content in 41 bp window : 9% Overall GC content : 25% Longest homopolymer : (length 6)

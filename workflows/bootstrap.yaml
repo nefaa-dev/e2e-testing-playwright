@@ -1,0 +1,17 @@
+name: Bootstrap GitHub repository
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+  packages: read
+
+jobs:
+  tf_boostrap:
+    uses: biontech-qm/bnt-reusable-workflows/.github/workflows/tf-bootstrap-gh-repository.yaml@v5.0.8
+    secrets: inherit
+    with:
+      enable_oidc_creation: true
+      enable_tf_backend_creation: false

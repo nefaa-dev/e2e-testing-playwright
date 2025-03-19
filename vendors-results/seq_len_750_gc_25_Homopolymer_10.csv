@@ -1,0 +1,2 @@
+Eurofins,IDTDNA,TwistDNA,ThermoFisher,Biontech,Validity_Eurofins,Validity_IDTDNA,Validity_TwistDNA,Validity_ThermoFisher,Validity_Biontech
+xmark-icon,check-icon,xmark-icon,xmark-icon,xmark-icon,Homopolymer region at position 89 : (length 10),Valid,Sequence issue in the adapter,Homopolymer from position 89 to 98,Min GC content in 41 bp window : 12% Overall GC content : 25% Longest homopolymer : (length 10)

@@ -1,0 +1,68 @@
+name: docker-gcp
+description: build and push docker images to GCP Artifact Registry
+
+inputs:
+  GCP_SERVICE_ACCOUNT:
+    description: GCP Service Account Key
+    required: true
+
+  context:
+    description: docker build context
+    required: true
+
+  filename:
+    description: dockerfile file name
+    required: false
+
+  build_secrets:
+    description: docker build secrets
+    required: false
+
+  build-args:
+    description: docker build args
+    required: false
+
+  tags:
+    description: docker image tags
+    required: true
+
+  image_name:
+    description: docker image name
+    required: true
+
+  docker-registry:
+    description: docker registry to push images to
+    required: true
+
+
+
+runs:
+  using: composite
+  steps:
+    - id: "auth"
+      uses: google-github-actions/auth@62cf5bd3e4211a0a0b51f2c6d6a37129d828611d
+      with:
+        credentials_json: "${{ inputs.GCP_SERVICE_ACCOUNT }}"
+
+    - name: Login to GAR
+      uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
+      with:
+        registry: ${{ inputs.docker-registry }}
+        username: _json_key
+        password: "${{ inputs.GCP_SERVICE_ACCOUNT }}"
+
+    - uses: docker/setup-buildx-action@f95db51fddba0c2d1ec667646a06c2ce06100226
+      id: buildx
+
+    - name: Build and push
+      uses: docker/build-push-action@0565240e2d4ab88bba5387d719585280857ece09
+      with:
+        builder: ${{ steps.buildx.outputs.name }}
+        context: ${{ inputs.context }}
+        file: ${{ inputs.filename }}
+        tags: "${{ inputs.image_name }}:${{ inputs.tags }}"
+        cache-to: type=registry,ref=${{ inputs.image_name }}/cache:latest,mode=max
+        cache-from: type=registry,ref=${{ inputs.image }}/cache:latest
+        secrets: ${{ inputs.build_secrets}}
+        build-args: ${{ inputs.build-args }}
+        push: true

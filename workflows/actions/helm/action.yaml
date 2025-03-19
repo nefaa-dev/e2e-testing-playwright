@@ -1,0 +1,48 @@
+name: helm
+description: Package and push Helm charts to AWS ECR
+
+inputs:
+  role_arn:
+    description: AWS Role ARN to assume
+    required: true
+
+  aws_region:
+    description: AWS region
+    required: true
+
+  build_path:
+    description: Helm chart build path
+    required: true
+
+  ecr_registry:
+    description: ECR registry
+    required: true
+
+  chart_version:
+    description: Helm Chart version
+    required: true
+
+runs:
+  using: composite
+
+  steps:
+    - name: Setup AWS credentials
+      uses: aws-actions/configure-aws-credentials@010d0da01d0b5a38af31e9c3470dbfdabdecca3a
+      with:
+        role-to-assume: ${{ inputs.role_arn }}
+        aws-region: ${{ inputs.aws_region }}
+
+    - name: Login to ECR
+      uses: aws-actions/amazon-ecr-login@062b18b96a7aff071d4dc91bc00c4c1a7945b076
+      id: ecr
+
+    - name: Build and push Helm chart to AWS ECR
+      shell: bash
+      run: |
+        ECR_REGISTRY=${{ steps.ecr.outputs.registry }}
+        cd ${{ inputs.build_path }}
+        helm dependencies build .
+        helm dependencies update
+        helm package . --version ${{ inputs.chart_version }}
+        HELM_CHART_PACKAGE=`ls *.tgz`
+        helm push $HELM_CHART_PACKAGE oci://${{ inputs.ecr_registry }}/vendors/helm

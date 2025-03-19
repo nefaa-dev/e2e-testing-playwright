@@ -1,0 +1,15 @@
+name: Deploy self hosted github runner (in AWS ECS(biontech))
+on:
+  workflow_dispatch:
+    inputs:
+      env:
+        description: "The environment that the runner should be deployed to"
+        required: true
+        default: dev
+        type: string
+
+jobs:
+  gh-runner-deploy:
+    uses: biontech-qm/bnt-reusable-workflows/.github/workflows/gh-runner-deploy.yaml@v6.1.0
+    with:
+      environment: ${{ inputs.env }}

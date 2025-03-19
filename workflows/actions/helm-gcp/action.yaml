@@ -1,0 +1,44 @@
+name: helm-gcp
+description: build and push helm charts to GCP Artifact Registry
+
+inputs:
+  GCP_SERVICE_ACCOUNT:
+    description: GCP Service Account Key
+    required: true
+
+  chart_version:
+    description: Helm Chart version
+    required: true
+
+  helm-registry:
+    description: helm registry to push charts to
+    required: true
+
+  build_path:
+    description: Helm chart build path
+    required: true
+
+
+
+runs:
+  using: composite
+  steps:
+    - id: "auth"
+      uses: google-github-actions/auth@62cf5bd3e4211a0a0b51f2c6d6a37129d828611d
+      with:
+        credentials_json: "${{ inputs.GCP_SERVICE_ACCOUNT }}"
+
+    - name: Login to GAR
+      uses: docker/login-action@343f7c4344506bcbf9b4de18042ae17996df046d
+      with:
+        registry: ${{ inputs.helm-registry }}
+        username: _json_key
+        password: "${{ inputs.GCP_SERVICE_ACCOUNT }}"
+
+    - name: Build and push Helm chart to GAR
+      shell: bash
+      run: |
+        helm dependencies build ${{ inputs.build_path }}
+        helm package ${{ inputs.build_path }} --version ${{ inputs.chart_version }}
+        HELM_CHART_PACKAGE=`ls *.tgz`
+        helm push $HELM_CHART_PACKAGE oci://${{ inputs.helm-registry }}/vendors

@@ -1,0 +1,51 @@
+name: Vendors API CI
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "components/api/**"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  vendors-api-ci:
+    name:  Vendors API CI 
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Cache NuGet Packages
+        id: nuget-packages-cache
+        uses: actions/cache@v4
+        env:
+          cache-name: nuget-packages-cache
+        with:
+          path: ~/.nuget
+          key: ${{ runner.os }}-nuget-${{ hashFiles('components/api/**/*.csproj', 'components/api/Directory.Packages.props' ) }}
+          restore-keys: ${{ runner.os }}-nuget-
+      
+      # - name: Prepare env
+      #   run: |
+      #     dotnet tool install --global JetBrains.dotCover.GlobalTool --version 2023.2.3
+      #     dotnet tool install --global dotnet-reportgenerator-globaltool
+
+      - name: Restore dependencies
+        working-directory: ./components/api
+        env:
+          ID_GITHUB_USER: ${{ vars.ID_AUTOMATEDLAB_USER }}
+          ID_GITHUB_TOKEN: ${{ secrets.ID_AUTOMATEDLAB_TOKEN }}
+        run: |
+          dotnet restore -v n
+
+      - name: Build api
+        working-directory: ./components/api
+        run: dotnet build --no-restore
+

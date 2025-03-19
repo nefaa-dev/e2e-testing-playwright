@@ -1,0 +1,88 @@
+name: Delete feature branch deployment after PR merge
+
+on:
+  pull_request:
+    types:
+      - closed
+
+jobs:
+  setup-vars:
+    name: Set up Deployment variables
+    runs-on: ubuntu-latest
+    steps:
+      - name: Set up Deployment variables
+        id: vars
+        run: |
+          RN=${{ github.head_ref }}
+          RELEASE_NAME=$(echo $RN | tr / -)
+          echo $RELEASE_NAME
+          echo "RELEASE_NAME=$RELEASE_NAME" >> $GITHUB_OUTPUT
+    outputs:
+      RELEASE_NAME: ${{ steps.vars.outputs.RELEASE_NAME }}
+
+  config:
+    name: Setup Aws and Github configurations
+    runs-on: ubuntu-latest
+    steps:
+      - uses: biontech-qm/swae-github-runners/setup-env-vars@v0.3.0
+        with:
+          environment: dev
+    outputs:
+      GH_REPO: ${{ env.GH_REPO }}
+      AWS_ACCOUNT_ID: ${{ env.AWS_ACCOUNT_ID }}
+      AWS_REGION: ${{ env.AWS_REGION }}
+
+  remove-deployment:
+    needs: [config, setup-vars]
+    permissions:
+      id-token: write
+      contents: read
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup AWS credentials
+        uses: aws-actions/configure-aws-credentials@010d0da01d0b5a38af31e9c3470dbfdabdecca3a
+        with:
+          role-to-assume: "arn:aws:iam::${{ needs.config.outputs.AWS_ACCOUNT_ID }}:role/gh-oidc-id-bioai-autolab-vendors-api-deployment_role"
+          aws-region: ${{ needs.config.outputs.AWS_REGION }}
+
+      - name: Set up kubeconfig
+        run: |
+          aws eks update-kubeconfig --name autolab-cluster --region ${{ needs.config.outputs.AWS_REGION }}
+
+      - name: Install kubectl
+        run: |
+          echo "Installing kubectl..."
+
+          # Download the latest release of kubectl
+          curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
+            
+          # Make the kubectl binary executable
+          chmod +x kubectl
+            
+          # Move the binary to a directory in the PATH
+          sudo mv kubectl /usr/local/bin/
+
+      - name: Install Helm
+        run: |
+          curl -fsSL -o get_helm.sh https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3
+          chmod 700 get_helm.sh
+          ./get_helm.sh
+
+      - name: Delete Feature deployment
+        run: |
+          NS="vendors-${{ needs.setup-vars.outputs.RELEASE_NAME }}"
+          echo $NS
+          count=$(kubectl get ns | grep $NS | wc -l)
+          echo $count
+          if [ "$count" -gt 0 ]; then
+            echo "Uninstall Helm release $NS"
+            helm uninstall $NS -n $NS
+
+            echo "Delete PVs"
+            kubectl delete pvc --all -n $NS
+            
+            echo "Removing the feature branch deployment"
+            kubectl delete ns $NS
+          else
+            echo "No matching namespace $NS found."
+          fi
